@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fixed Income Inventory Terminal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-main: #F4F6FA;
+            --bg-sidebar: #FFFFFF;
+            --bg-card: #FFFFFF;
+            --bg-input: #F1F5F9;
+            --text-primary: #0F172A;
+            --text-secondary: #475569;
+            --text-muted: #64748B;
+            --accent-purple: #7C3AED;
+            --accent-pink: #DB2777;
+            --accent-teal: #0D9488;
+            --accent-blue: #2563EB;
+            --border-color: #E2E8F0;
+            --font-main: 'Plus Jakarta Sans', sans-serif;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: var(--font-main);
+            background: linear-gradient(135deg, #F8FAFC 0%, #EEF2F6 100%);
+            color: var(--text-primary);
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #F1F5F9; }
+        ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
+        
+        .navbar {
+            background-color: #FFFFFF; display: flex; justify-content: space-between; align-items: center;
+            padding: 1rem 2rem; border-bottom: 1px solid var(--border-color);
+            box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.03); position: sticky; top: 0; z-index: 100;
+        }
+        .search-wrapper { position: relative; width: 420px; }
+        .search-wrapper i { position: absolute; left: 1.1rem; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
+        .search-wrapper input {
+            width: 100%; padding: 0.65rem 1rem 0.65rem 2.75rem; border-radius: 12px;
+            border: 1px solid var(--border-color); background-color: var(--bg-input); outline: none; transition: all 0.25s ease;
+        }
+        .search-wrapper input:focus { background-color: #FFFFFF; border-color: var(--accent-purple); box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.12); }
+        
+        .sort-dropdown { padding: 0.65rem 1.25rem; border-radius: 12px; border: 1px solid var(--border-color); background-color: var(--bg-input); font-weight: 600; color: var(--text-secondary); cursor: pointer; }
+        .clear-btn { background: none; border: 1px solid transparent; color: #EF4444; padding: 0.65rem 1.25rem; border-radius: 12px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; }
+        .clear-btn:hover { background: rgba(239, 68, 68, 0.08); }
+        
+        .workspace { display: flex; flex: 1; overflow: hidden; }
+        .sidebar { width: 320px; background-color: var(--bg-sidebar); border-right: 1px solid var(--border-color); padding: 1.75rem 1.5rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1.75rem; }
+        .content-area { flex: 1; padding: 2.25rem; overflow-y: auto; }
+        
+        .bonds-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1.75rem; }
+        .bond-card {
+            background-color: var(--bg-card); border-radius: 20px; padding: 1.5rem; display: flex; flex-direction: column;
+            justify-content: space-between; position: relative; border: 1px solid rgba(226, 232, 240, 0.8); transition: all 0.3s ease; cursor: pointer;
+        }
+        .bond-card:hover { transform: translateY(-5px); box-shadow: 0 20px 25px -5px rgba(15, 23, 42, 0.08); }
+        .bond-card:nth-child(4n+1) { border-top: 5px solid var(--accent-purple); background: linear-gradient(to bottom right, #FAF5FF, #FFFFFF 40%); }
+        .bond-card:nth-child(4n+2) { border-top: 5px solid var(--accent-pink); background: linear-gradient(to bottom right, #FDF2F8, #FFFFFF 40%); }
+        .bond-card:nth-child(4n+3) { border-top: 5px solid var(--accent-teal); background: linear-gradient(to bottom right, #F0FDFA, #FFFFFF 40%); }
+        .bond-card:nth-child(4n+4) { border-top: 5px solid var(--accent-blue); background: linear-gradient(to bottom right, #EFF6FF, #FFFFFF 40%); }
+        
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(15, 23, 42, 0.3); backdrop-filter: blur(8px); display: flex; justify-content: center; align-items: center; z-index: 1000; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; }
+        .modal-overlay.active { opacity: 1; pointer-events: auto; }
+        .modal-container { background-color: #FFFFFF; width: 92%; max-width: 680px; border-radius: 24px; overflow: hidden; display: flex; flex-direction: column; max-height: 85vh; border: 1px solid var(--border-color); }
+        .modal-header-issuer { background: linear-gradient(135deg, #F8FAFC 0%, #F1F5F9 100%); padding: 1.75rem; border-bottom: 1px solid var(--border-color); position: relative; }
+        .modal-body { padding: 1.75rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1.5rem; }
+    </style>
+</head>
+<body>
+
+    <header class="navbar">
+        <div class="brand flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-pink-500 flex items-center justify-center text-white shadow-md">
+                <i class="fa-solid fa-gem text-lg"></i>
+            </div>
+            <div class="brand-text">
+                <h1 class="font-extrabold text-slate-900 text-lg leading-none">Fixed Income Terminal</h1>
+                <p class="text-xs font-semibold text-slate-400 mt-1" id="total-inventory-badge">Connecting to data node...</p>
+            </div>
+        </div>
+        <div class="search-wrapper">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="text" id="search-input" placeholder="Search by Issuer Name or ISIN...">
+        </div>
+        <div class="header-actions flex items-center gap-3">
+            <select id="sort-select" class="sort-dropdown">
+                <option value="default">Default Catalog Order</option>
+                <option value="coupon-desc">Coupon Rate: High to Low</option>
+                <option value="yield-desc">Investor XIRR: High to Low</option>
+            </select>
+            <button id="btn-clear-filters" class="clear-btn">
+                <i class="fa-solid fa-filter-circle-xmark"></i>
+                <span>Reset Filters</span>
+            </button>
+        </div>
+    </header>
+
+    <main class="workspace">
+        <aside class="sidebar">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                <span class="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                    <i class="fa-solid fa-sliders text-purple-500"></i> Terminal Filters
+                </span>
+            </div>
+            <div id="sidebar-filters-container" class="space-y-6"></div>
+        </aside>
+
+        <section class="content-area">
+            <div class="results-bar text-slate-500 mb-5 font-medium">
+                <span id="results-count-text">Synchronizing system rows...</span>
+            </div>
+            <div id="zero-state" class="hidden py-20 flex flex-col items-center justify-center text-center">
+                <div class="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 mb-4 text-2xl">
+                    <i class="fa-solid fa-folder-open"></i>
+                </div>
+                <h3 class="font-bold text-slate-800 text-lg mb-1">No Matching Securities</h3>
+                <p class="text-slate-400 text-sm">Adjust filter profiles or update search queries.</p>
+            </div>
+            <div id="inventory-grid" class="bonds-grid"></div>
+        </section>
+    </main>
+
+    <div id="detail-modal" class="modal-overlay" onclick="closePopupModal(event)">
+        <div class="modal-container" onclick="event.stopPropagation()">
+            <div class="modal-header-issuer">
+                <button class="absolute top-5 right-5 w-8 h-8 rounded-full bg-slate-200 hover:bg-red-500 hover:text-white text-slate-600 flex items-center justify-center" onclick="closePopupModal(null)">
+                    <i class="fa-solid fa-xmark text-sm"></i>
+                </button>
+                <div class="text-xs font-bold uppercase tracking-widest text-purple-600 mb-1">Entity Profile Overview</div>
+                <h2 id="modal-issuer-name" class="text-xl font-extrabold text-slate-900 leading-tight pr-8"></h2>
+                <p id="modal-issuer-about" class="text-slate-500 text-xs leading-relaxed mt-2 font-medium"></p>
+            </div>
+            <div class="modal-body">
+                <div>
+                    <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3"><i class="fa-solid fa-shield text-blue-500"></i> Security Details</h4>
+                    <div id="modal-sec-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-3"></div>
+                </div>
+                <div>
+                    <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3"><i class="fa-solid fa-chart-pie text-pink-500"></i> Yield & Pricing Metrics</h4>
+                    <div id="modal-comm-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-3"></div>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-100 text-xs text-slate-500 font-medium">
+                    <div class="flex justify-between bg-slate-50 p-2.5 rounded-xl">
+                        <span>Remaining Window:</span><span id="modal-tenure-val" class="text-slate-800 font-bold"></span>
+                    </div>
+                    <div class="flex justify-between bg-slate-50 p-2.5 rounded-xl">
+                        <span>Final Maturity Target:</span><span id="modal-maturity-val" class="text-slate-800 font-bold"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbxoPz6vMmKj1n6jUXWG221p6rhD1Nd3jZjKNUvc5UNxmwoT399JVDosGppKqgoHk2wx/exec";
+
+const masterState = { search: "", sort: "default", commissionBucket: "ALL", ratingRisk: "ALL", type: "ALL", tenureBucket: "ALL", yieldGroup: "ALL" };
+let inventoryData = [];
+
+function cleanNum(val) {
+    if (val === undefined || val === null) return 0;
+    let clean = String(val).replace(/[^0-9.]/g, '');
+    return parseFloat(clean) || 0;
+}
+
+async function pullLiveSheetsData() {
+    try {
+        const response = await fetch(GOOGLE_SHEET_URL);
+        const sheetData = await response.json();
+        
+        if (!sheetData) return;
+        let rawRows = Array.isArray(sheetData) ? sheetData : sheetData.data;
+        if (!rawRows || !Array.isArray(rawRows)) return;
+
+        let validatedBuffer = [];
+        rawRows.forEach((row) => {
+            if (!row) return;
+
+            // Normalized internal browser translation engine 
+            let cleanRow = {};
+            for (let k in row) {
+                if (row.hasOwnProperty(k)) {
+                    let normalizedKey = String(k).toLowerCase().replace(/[\s\/_]+/g, '');
+                    cleanRow[normalizedKey] = row[k];
+                }
+            }
+
+            const isin = cleanRow["isin"] || "";
+            const name = cleanRow["name"] || "";
+            if (!isin && !name) return;
+
+            // Fallback router strategy handling continuous text string configurations safely
+            let rawXirr = "0%";
+            if (cleanRow["investorxirrifaifa"] !== undefined) rawXirr = String(cleanRow["investorxirrifaifa"]).trim();
+            else if (cleanRow["investorxirrifa"] !== undefined) rawXirr = String(cleanRow["investorxirrifa"]).trim();
+            else if (cleanRow["investorxirr"] !== undefined) rawXirr = String(cleanRow["investorxirr"]).trim();
+            
+            let parsedXirrValue = cleanNum(rawXirr);
+            
+            validatedBuffer.push({
+                isin: isin.toString().trim(),
+                issuer: name.toString().trim(),                        
+                coupon: cleanRow["couponrate"] || "0%",
+                frequency: cleanRow["interestfrequency"] || "N/A", 
+                faceValue: cleanRow["facevalue"] || "0",
+                maturity: cleanRow["maturitydate"] || "N/A",
+                rating: cleanRow["ratings"] !== undefined ? String(cleanRow["ratings"]).trim() : "N/A",
+                security: cleanRow["security"] || "N/A",
+                seniority: cleanRow["seniority"] || "N/A",
+                listing: cleanRow["listingstatus"] || "N/A",
+                allInRate: cleanRow["allinrate"] || "0%",
+                xirr: rawXirr, 
+                rateNumeric: parsedXirrValue, 
+                commission: cleanRow["ifaabsolutecommission"] || "0",
+                liquidityType: cleanRow["liquiditytype"] || "N/A",
+                platform: cleanRow["platformavailability"] || "N/A",
+                type: cleanRow["issuercategory"] !== undefined ? String(cleanRow["issuercategory"]).trim() : "N/A",
+                tenure: cleanRow["remainingtenurebucket"] || "N/A",
+                riskCategory: cleanRow["riskcategory"] !== undefined ? String(cleanRow["riskcategory"]).trim() : "Medium Risk", 
+                clientCategory: cleanRow["clientcategory"] || "N/A",
+                commissionBucket: cleanRow["commissionbucket"] !== undefined ? String(cleanRow["commissionbucket"]).trim() : "Other",
+                about: cleanRow["companyinfo"] || "",
+                availableQty: cleanRow["availableforsaleqty"] || "0",
+                readyQty: cleanRow["readilyavailableqty"] || "0",
+                t1Qty: cleanRow["availableont1qty"] || "0",
+                totalAmt: cleanRow["totalavailableamtincr"] || "0",  
+                readyAmt: cleanRow["readilyavailableamtincr"] || "0",
+                t1Amt: cleanRow["availableont1basisamtincr"] || "0" 
+            });
+        });
+
+        inventoryData = validatedBuffer;
+        buildCustomInteractiveFilters();
+        executeTerminalGridEngine();
+    } catch (error) {
+        console.error("Connection matrix mapping down:", error);
+        document.getElementById('results-count-text').innerText = "Sync failure. Verifying communication protocol lanes...";
+    }
+}
+
+function buildCustomInteractiveFilters() {
+    const box = document.getElementById('sidebar-filters-container');
+    if (!box) return;
+
+    const types = [...new Set(inventoryData.map(b => b.type))].filter(Boolean).sort();
+    const tenures = [...new Set(inventoryData.map(b => b.tenure))].filter(Boolean).sort();
+    const risks = [...new Set(inventoryData.map(b => b.riskCategory))].filter(Boolean).sort();
+    const uniqueBuckets = [...new Set(inventoryData.map(item => item.commissionBucket))].filter(Boolean).sort();
+
+    box.innerHTML = `
+        <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Investor Yield (XIRR)</label>
+            <select id="filter-yield-group" class="w-full bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 outline-none">
+                <option value="ALL" ${masterState.yieldGroup === "ALL" ? "selected" : ""}>Show All Yields</option>
+                <option value="under-8" ${masterState.yieldGroup === "under-8" ? "selected" : ""}>Conservative (Under 8%)</option>
+                <option value="8-10" ${masterState.yieldGroup === "8-10" ? "selected" : ""}>Moderate (8% - 10%)</option>
+                <option value="10-12" ${masterState.yieldGroup === "10-12" ? "selected" : ""}>High Yield (10% - 12%)</option>
+                <option value="above-12" ${masterState.yieldGroup === "above-12" ? "selected" : ""}>Aggressive (Above 12%)</option>
+            </select>
+        </div>
+        <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Asset Class Classifications</label>
+            <select id="filter-type" class="w-full bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 outline-none">
+                <option value="ALL">Show All Categories</option>
+                ${types.map(t => `<option value="${t}" ${masterState.type === t ? "selected" : ""}>${t}</option>`).join('')}
+            </select>
+        </div>
+        <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Risk Profile Segments</label>
+            <select id="filter-risk" class="w-full bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 outline-none">
+                <option value="ALL">Show All Risks</option>
+                ${risks.map(r => `<option value="${r}" ${masterState.ratingRisk === r ? "selected" : ""}>${r}</option>`).join('')}
+            </select>
+        </div>
+        <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Maturity Timeline</label>
+            <select id="filter-tenure" class="w-full bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 outline-none">
+                <option value="ALL">Show All Windows</option>
+                ${tenures.map(ten => `<option value="${ten}" ${masterState.tenureBucket === ten ? "selected" : ""}>${ten}</option>`).join('')}
+            </select>
+        </div>
+        <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Commission Structure Group</label>
+            <select id="commission-bucket-dropdown" class="w-full bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 outline-none">
+                <option value="ALL">Show All Tiers</option>
+                ${uniqueBuckets.map(bucket => `<option value="${bucket}" ${masterState.commissionBucket === bucket ? "selected" : ""}>${bucket}</option>`).join('')}
+            </select>
+        </div>
+    `;
+
+    document.getElementById('filter-yield-group').addEventListener('change', (e) => { masterState.yieldGroup = e.target.value; executeTerminalGridEngine(); });
+    document.getElementById('filter-type').addEventListener('change', (e) => { masterState.type = e.target.value; executeTerminalGridEngine(); });
+    document.getElementById('filter-risk').addEventListener('change', (e) => { masterState.ratingRisk = e.target.value; executeTerminalGridEngine(); });
+    document.getElementById('filter-tenure').addEventListener('change', (e) => { masterState.tenureBucket = e.target.value; executeTerminalGridEngine(); });
+    document.getElementById('commission-bucket-dropdown').addEventListener('change', (e) => { masterState.commissionBucket = e.target.value; executeTerminalGridEngine(); });
+}
+
+function executeTerminalGridEngine() {
+    const grid = document.getElementById('inventory-grid');
+    if (!grid) return;
+
+    let filtered = inventoryData.filter(bond => {
+        const textMatch = !masterState.search || bond.issuer.toLowerCase().includes(masterState.search) || bond.isin.toLowerCase().includes(masterState.search);
+        
+        let yieldMatch = true;
+        if (masterState.yieldGroup === "under-8") yieldMatch = bond.rateNumeric < 8;
+        else if (masterState.yieldGroup === "8-10") yieldMatch = bond.rateNumeric >= 8 && bond.rateNumeric <= 10;
+        else if (masterState.yieldGroup === "10-12") yieldMatch = bond.rateNumeric > 10 && bond.rateNumeric <= 12;
+        else if (masterState.yieldGroup === "above-12") yieldMatch = bond.rateNumeric > 12;
+
+        const typeMatch = masterState.type === "ALL" || bond.type === masterState.type;
+        const riskMatch = masterState.ratingRisk === "ALL" || bond.riskCategory === masterState.ratingRisk;
+        const tenureMatch = masterState.tenureBucket === "ALL" || bond.tenure === masterState.tenureBucket;
+        const commissionMatch = masterState.commissionBucket === "ALL" || bond.commissionBucket === masterState.commissionBucket;
+        
+        return textMatch && yieldMatch && typeMatch && riskMatch && tenureMatch && commissionMatch;
+    });
+
+    if (masterState.sort === "coupon-desc") {
+        filtered.sort((a, b) => cleanNum(b.coupon) - cleanNum(a.coupon));
+    } else if (masterState.sort === "yield-desc") {
+        filtered.sort((a, b) => b.rateNumeric - a.rateNumeric);
+    }
+
+    document.getElementById('results-count-text').innerText = `Showing ${filtered.length} matching securities in configuration matrix`;
+    document.getElementById('total-inventory-badge').innerText = `System integrated • Tracking ${inventoryData.length} records`;
+
+    grid.innerHTML = "";
+    if (filtered.length === 0) {
+        document.getElementById('zero-state').classList.remove('hidden');
+        return;
+    }
+    document.getElementById('zero-state').classList.add('hidden');
+
+    filtered.forEach(bond => {
+        const elementCard = document.createElement('div');
+        elementCard.className = "bond-card text-[0.76rem]";
+        
+        let badgeColor = "bg-emerald-100 text-emerald-800";
+        if(bond.riskCategory.toLowerCase().includes("medium")) badgeColor = "bg-amber-100 text-amber-800";
+        if(bond.riskCategory.toLowerCase().includes("high") || bond.riskCategory.toLowerCase().includes("very high")) badgeColor = "bg-orange-100 text-orange-800";
+        if(bond.riskCategory.toLowerCase().includes("distressed") || bond.riskCategory.toLowerCase().includes("default")) badgeColor = "bg-red-100 text-red-800";
+
+        elementCard.innerHTML = `
+            <div>
+                <div class="flex justify-between items-start gap-2 mb-2">
+                    <h3 class="font-extrabold text-slate-900 text-[0.88rem] leading-snug tracking-tight">${bond.issuer}</h3>
+                    <div class="flex flex-col items-end gap-1 shrink-0">
+                        <span class="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-md font-bold text-[10px]">${bond.rating}</span>
+                        <span class="${badgeColor} px-1.5 py-0.5 rounded text-[9px] font-semibold">${bond.riskCategory}</span>
+                    </div>
+                </div>
+                <div class="text-[10px] font-mono text-slate-400 mb-3">ISIN: ${bond.isin}</div>
+                <div class="grid grid-cols-2 gap-x-4 gap-y-1.5 border-t border-b border-slate-100 py-2 my-2 text-slate-600 font-medium">
+                    <div class="flex justify-between"><span>Coupon:</span><strong class="text-slate-800">${bond.coupon}</strong></div>
+                    <div class="flex justify-between"><span>Investor XIRR:</span><strong class="text-purple-600">${bond.xirr}</strong></div>
+                    <div class="flex justify-between"><span>Frequency:</span><strong class="text-slate-800">${bond.frequency}</strong></div>
+                    <div class="flex justify-between"><span>Structure:</span><strong class="text-slate-800">${bond.liquidityType}</strong></div>
+                </div>
+            </div>
+            <div class="pt-2 mt-2 border-t border-dashed border-slate-300 text-[0.72rem]">
+                <div class="flex justify-between bg-slate-50 p-1.5 rounded-md text-center gap-1 mb-2">
+                    <div><span class="text-[9px] text-slate-400 block">Available Qty</span><strong>${bond.availableQty}</strong></div>
+                    <div><span class="text-[9px] text-slate-400 block">Readily Qty</span><strong>${bond.readyQty}</strong></div>
+                    <div><span class="text-[9px] text-slate-400 block">T+1 Qty</span><strong>${bond.t1Qty}</strong></div>
+                </div>
+                <div class="flex flex-col gap-1 font-bold text-[11px]">
+                    <div class="flex justify-between bg-indigo-50 px-2 py-1 rounded text-indigo-900">
+                        <span>Total Available AMT:</span><span>₹${bond.totalAmt} Cr</span>
+                    </div>
+                    <div class="flex justify-between bg-teal-50 px-2 py-1 rounded text-teal-900">
+                        <span>Readily Available AMT:</span><span>₹${bond.readyAmt} Cr</span>
+                    </div>
+                    <div class="flex justify-between bg-amber-50 px-2 py-1 rounded text-amber-900">
+                        <span>Available on T+1 AMT:</span><span>₹${bond.t1Amt} Cr</span>
+                    </div>
+                </div>
+            </div>
+        `;
+        elementCard.addEventListener('click', () => { displayDetailedAssetDrawer(bond); });
+        grid.appendChild(elementCard);
+    });
+}
+
+function displayDetailedAssetDrawer(bond) {
+    document.getElementById('modal-issuer-name').innerText = bond.issuer;
+    document.getElementById('modal-issuer-about').innerText = bond.about || "No supplemental matrix commentary registered for this corporate issuer.";
+    document.getElementById('modal-tenure-val').innerText = bond.tenure;
+    document.getElementById('modal-maturity-val').innerText = bond.maturity;
+
+    document.getElementById('modal-sec-grid').innerHTML = `
+        <div class="bg-slate-50 p-2 rounded-xl flex flex-col"><span class="text-[10px] text-slate-400">ISIN Reference</span><strong class="text-slate-700 text-xs">${bond.isin}</strong></div>
+        <div class="bg-slate-50 p-2 rounded-xl flex flex-col"><span class="text-[10px] text-slate-400">Credit Rating</span><strong class="text-slate-700 text-xs">${bond.rating}</strong></div>
+        <div class="bg-slate-50 p-2 rounded-xl flex flex-col"><span class="text-[10px] text-slate-400">Risk Segment</span><strong class="text-slate-700 text-xs">${bond.riskCategory}</strong></div>
+        <div class="bg-slate-50 p-2 rounded-xl flex flex-col"><span class="text-[10px] text-slate-400">Security Structure</span><strong class="text-slate-700 text-xs">${bond.security}</strong></div>
+        <div class="bg-slate-50 p-2 rounded-xl flex flex-col"><span class="text-[10px] text-slate-400">Debt Seniority</span><strong class="text-slate-700 text-xs">${bond.seniority}</strong></div>
+        <div class="bg-slate-50 p-2 rounded-xl flex flex-col"><span class="text-[10px] text-slate-400">Listing Status</span><strong class="text-slate-700 text-xs">${bond.listing}</strong></div>
+    `;
+
+    document.getElementById('modal-comm-grid').innerHTML = `
+        <div class="bg-slate-50 p-2 rounded-xl flex flex-col"><span class="text-[10px] text-slate-400">Coupon Rate</span><strong class="text-slate-700 text-xs">${bond.coupon}</strong></div>
+        <div class="bg-slate-50 p-2 rounded-xl flex flex-col"><span class="text-[10px] text-slate-400">Interest Frequency</span><strong class="text-slate-700 text-xs">${bond.frequency}</strong></div>
+        <div class="bg-slate-50 p-2 rounded-xl flex flex-col"><span class="text-[10px] text-slate-400">Investor XIRR</span><strong class="text-purple-600 text-xs">${bond.xirr}</strong></div>
+        <div class="bg-slate-50 p-2 rounded-xl flex flex-col"><span class="text-[10px] text-slate-400">All In Rate</span><strong class="text-slate-700 text-xs">${bond.allInRate}</strong></div>
+        <div class="bg-slate-50 p-2 rounded-xl flex flex-col"><span class="text-[10px] text-slate-400">Face Value Unit</span><strong class="text-slate-700 text-xs">₹${bond.faceValue}</strong></div>
+        <div class="bg-slate-50 p-2 rounded-xl flex flex-col"><span class="text-[10px] text-slate-400">IFA Commission</span><strong class="text-teal-600 text-xs">${bond.commission}</strong></div>
+    `;
+    document.getElementById('detail-modal').classList.add('active');
+}
+
+function closePopupModal(e) { if (!e || e.target === document.getElementById('detail-modal') || e === null) { document.getElementById('detail-modal').classList.remove('active'); } }
+
+window.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('search-input').addEventListener('input', (e) => { masterState.search = e.target.value.toLowerCase().trim(); executeTerminalGridEngine(); });
+    document.getElementById('sort-select').addEventListener('change', (e) => { masterState.sort = e.target.value; executeTerminalGridEngine(); });
+    document.getElementById('btn-clear-filters').addEventListener('click', () => {
+        document.getElementById('search-input').value = ""; document.getElementById('sort-select').value = "default";
+        masterState.search = ""; masterState.sort = "default"; masterState.commissionBucket = "ALL"; masterState.ratingRisk = "ALL"; masterState.type = "ALL"; masterState.tenureBucket = "ALL"; masterState.yieldGroup = "ALL";
+        buildCustomInteractiveFilters(); executeTerminalGridEngine();
+    });
+    pullLiveSheetsData();
+    setInterval(pullLiveSheetsData, 60000); 
+});
+</script>
+</body>
+</html>
