@@ -88,12 +88,12 @@
             </div>
             <div class="brand-text">
                 <h1 class="font-extrabold text-slate-900 text-lg leading-none">Fixed Income Terminal</h1>
-                <p class="text-xs font-semibold text-slate-400 mt-1" id="total-inventory-badge">Connecting to live nodes...</p>
+                <p class="text-xs font-semibold text-slate-400 mt-1" id="total-inventory-badge">Connecting to data node...</p>
             </div>
         </div>
         <div class="search-wrapper">
             <i class="fa-solid fa-magnifying-glass"></i>
-            <input type="text" id="search-input" placeholder="Search by Issuer Name, ISIN...">
+            <input type="text" id="search-input" placeholder="Search by Issuer Name or ISIN...">
         </div>
         <div class="header-actions flex items-center gap-3">
             <select id="sort-select" class="sort-dropdown">
@@ -165,8 +165,8 @@
     </div>
 
 <script>
-// Live Google Macro Execution URL
-const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbwo0AVWdeSnDf4y4HSLZsryz7zZUKt7G3pSNs09LqF1LeCqmh8nQtbCc6xC9BkdIGU/exec";
+// Linked to your direct live CSV stream
+const GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSqMspc17Rk4CHT4SXCRhGIyEV8Cq9kQS-r7yIdIOKuMaPdw1u-9fhRsB5nVpHE2_SVOHaYYzozBRvQ/pub?gid=1915371509&single=true&output=csv";
 
 const masterState = { search: "", sort: "default", commissionBucket: "ALL", ratingRisk: "ALL", type: "ALL", tenureBucket: "ALL", yieldGroup: "ALL" };
 let inventoryData = [];
@@ -177,109 +177,133 @@ function cleanNum(val) {
     return parseFloat(clean) || 0;
 }
 
-function formatPercentage(val) {
-    if (!val) return "0.00%";
-    let str = String(val).trim();
-    if (str.includes('%')) return str;
-    let num = parseFloat(str);
-    if (!isNaN(num)) {
-        if (num > 0 && num < 1) return (num * 100).toFixed(2) + "%";
-        return num.toFixed(2) + "%";
+// Custom internal parser to handle values containing line breaks or embedded commas safely
+function parseCSV(text) {
+    let p = '', c = '', r = [];
+    let q = false;
+    let row = [''];
+    for (let i = 0; i < text.length; i++) {
+        c = text[i];
+        let next = text[i+1];
+        if (c === '"') {
+            if (q && next === '"') { row[row.length - 1] += '"'; i++; }
+            else { q = !q; }
+        } else if (c === ',' && !q) {
+            row.push('');
+        } else if ((c === '\r' || c === '\n') && !q) {
+            if (c === '\r' && next === '\n') { i++; }
+            r.push(row);
+            row = [''];
+        } else {
+            row[row.length - 1] += c;
+        }
     }
-    return str;
+    if (row.length > 1 || row[0] !== '') { r.push(row); }
+    return r;
 }
 
 async function pullLiveSheetsData() {
     try {
         const response = await fetch(GOOGLE_SHEET_URL);
-        const sheetData = await response.json();
+        if (!response.ok) throw new Error("Network restriction blocks");
         
-        if (!sheetData) return;
-        let rawRows = Array.isArray(sheetData) ? sheetData : sheetData.data;
-        if (!rawRows || !Array.isArray(rawRows)) return;
+        const csvText = await response.text();
+        const rawRows = parseCSV(csvText);
+        
+        if (!rawRows || rawRows.length < 2) return;
+
+        // Create key map index relative to header naming structures
+        const headers = rawRows[0].map(h => String(h).toLowerCase().replace(/[\s\/_]+/g, '').trim());
+        
+        const isinIdx = headers.indexOf("isin");
+        const nameIdx = headers.indexOf("name");
+        const couponIdx = headers.indexOf("couponrate");
+        const freqIdx = headers.indexOf("interestfrequency");
+        const faceIdx = headers.indexOf("facevalue");
+        const matIdx = headers.indexOf("maturitydate");
+        const ratingIdx = headers.indexOf("ratings");
+        const secIdx = headers.indexOf("security");
+        const senIdx = headers.indexOf("seniority");
+        const listIdx = headers.indexOf("listingstatus");
+        const allInIdx = headers.indexOf("allinrate");
+        
+        // Handle varying dynamic XIRR naming variations
+        let xirrIdx = headers.indexOf("investorxirrifaifa");
+        if (xirrIdx === -1) xirrIdx = headers.indexOf("investorxirrifa");
+        if (xirrIdx === -1) xirrIdx = headers.indexOf("investorxirr");
+
+        const commIdx = headers.indexOf("ifaabsolutecommission");
+        const liqIdx = headers.indexOf("liquiditytype");
+        const platIdx = headers.indexOf("platformavailability");
+        const catIdx = headers.indexOf("issuercategory");
+        const tenureIdx = headers.indexOf("remainingtenurebucket");
+        const riskIdx = headers.indexOf("riskcategory");
+        const clientIdx = headers.indexOf("clientcategory");
+        const commBucketIdx = headers.indexOf("commissionbucket");
+        
+        // Dynamic search for Info/About column header
+        let infoIdx = headers.indexOf("companyinfo");
+        if (infoIdx === -1) infoIdx = headers.indexOf("abouttheissuer");
+        if (infoIdx === -1) infoIdx = headers.indexOf("about");
+        
+        const avQtyIdx = headers.indexOf("availableforsaleqty");
+        const rdQtyIdx = headers.indexOf("readilyavailableqty");
+        const t1QtyIdx = headers.indexOf("availableont1qty");
+        const totAmtIdx = headers.indexOf("totalavailableamtincr");
+        const rdAmtIdx = headers.indexOf("readilyavailableamtincr");
+        const t1AmtIdx = headers.indexOf("availableont1basisamtincr");
 
         let validatedBuffer = [];
-        rawRows.forEach((row) => {
-            if (!row) return;
 
-            // Generate lowercase sanitized key names matching cell schemas completely
-            let cleanRow = {};
-            for (let k in row) {
-                if (row.hasOwnProperty(k)) {
-                    let normalizedKey = String(k).toLowerCase().replace(/[\s\/_\+]+/g, '').trim();
-                    cleanRow[normalizedKey] = row[k];
-                }
-            }
+        for (let i = 1; i < rawRows.length; i++) {
+            const row = rawRows[i];
+            if (!row || row.length === 0 || row.every(cell => cell.trim() === "")) continue;
 
-            // Fallback scanner handles strings regardless of whitespace spacing anomalies
-            let isin = cleanRow["isin"] || "";
-            let issuerName = cleanRow["name"] || "";
-            
-            if (!isin || !issuerName) {
-                for (let rawKey in cleanRow) {
-                    if (rawKey.includes("isin")) isin = cleanRow[rawKey];
-                    if (rawKey.includes("name")) issuerName = cleanRow[rawKey];
-                }
-            }
+            const isin = isinIdx !== -1 ? row[isinIdx] : "";
+            const name = nameIdx !== -1 ? row[nameIdx] : "";
+            if (!isin && !name) continue;
 
-            // Regex verification to capture ISIN signatures explicitly
-            if (!isin) {
-                let objectDump = JSON.stringify(cleanRow);
-                let isinMatch = objectDump.match(/INE[0-9A-Z]{9}/i);
-                if (isinMatch) isin = isinMatch[0];
-            }
-            
-            // Default structural safety guards
-            if (!isin) return; 
-            if (!issuerName) issuerName = "Corporate Issuer Asset";
-
-            // Extract Investor XIRR variations
-            let rawXirr = "8.00%";
-            for (let k in cleanRow) {
-                if (k.includes("xirr") || k.includes("investor")) {
-                    rawXirr = formatPercentage(cleanRow[k]);
-                }
-            }
+            let rawXirr = xirrIdx !== -1 && row[xirrIdx] ? String(row[xirrIdx]).trim() : "0%";
             let parsedXirrValue = cleanNum(rawXirr);
-            
+
             validatedBuffer.push({
-                isin: isin.toString().trim().toUpperCase(),
-                issuer: issuerName.toString().trim(),                        
-                coupon: cleanRow["couponrate"] ? formatPercentage(cleanRow["couponrate"]) : "8.50%",
-                frequency: cleanRow["interestfrequency"] || "Annually", 
-                faceValue: cleanRow["facevalue"] ? cleanNum(cleanRow["facevalue"]).toLocaleString('en-IN') : "1,000",
-                maturity: cleanRow["maturitydate"] || "N/A",
-                rating: cleanRow["ratings"] ? String(cleanRow["ratings"]).trim() : "AA-",
-                security: cleanRow["security"] || "Secured",
-                seniority: cleanRow["seniority"] || "Senior",
-                listing: cleanRow["listingstatus"] || "Listed",
-                allInRate: cleanRow["allinrate"] ? formatPercentage(cleanRow["allinrate"]) : "8.50%",
+                isin: isin ? isin.trim() : "N/A",
+                issuer: name ? name.trim() : "Unspecified Issuer",                        
+                coupon: (couponIdx !== -1 && row[couponIdx]) ? row[couponIdx].trim() : "0%",
+                frequency: (freqIdx !== -1 && row[freqIdx]) ? row[freqIdx].trim() : "N/A", 
+                faceValue: (faceIdx !== -1 && row[faceIdx]) ? row[faceIdx].trim() : "0",
+                maturity: (matIdx !== -1 && row[matIdx]) ? row[matIdx].trim() : "N/A",
+                rating: (ratingIdx !== -1 && row[ratingIdx]) ? row[ratingIdx].trim() : "N/A",
+                security: (secIdx !== -1 && row[secIdx]) ? row[secIdx].trim() : "N/A",
+                seniority: (senIdx !== -1 && row[senIdx]) ? row[senIdx].trim() : "N/A",
+                listing: (listIdx !== -1 && row[listIdx]) ? row[listIdx].trim() : "N/A",
+                allInRate: (allInIdx !== -1 && row[allInIdx]) ? row[allInIdx].trim() : "0%",
                 xirr: rawXirr, 
-                rateNumeric: parsedXirrValue || 8.00, 
-                commission: cleanRow["ifaabsolutecommission"] || "0.50%",
-                liquidityType: cleanRow["liquiditytype"] || "Liquid",
-                platform: cleanRow["platformavailability"] || "Offline and OBPP Both",
-                type: cleanRow["issuercategory"] ? String(cleanRow["issuercategory"]).trim() : "Corporate",
-                tenure: cleanRow["remainingtenurebucket"] || "1 year to 3 years",
-                riskCategory: cleanRow["riskcategory"] ? String(cleanRow["riskcategory"]).trim() : "Low Risk", 
-                clientCategory: cleanRow["clientcategory"] || "Retail",
-                commissionBucket: cleanRow["commissionbucket"] ? String(cleanRow["commissionbucket"]).trim() : "Commission up to 1%",
-                about: cleanRow["abouttheissuer"] || "Supplemental profile overview pending.",
-                availableQty: cleanRow["availableforsaleqty"] ? cleanNum(cleanRow["availableforsaleqty"]).toLocaleString('en-IN') : "0",
-                readyQty: cleanRow["readilyavailableqty"] ? cleanNum(cleanRow["readilyavailableqty"]).toLocaleString('en-IN') : "0",
-                t1Qty: cleanRow["availableont1qty"] ? cleanNum(cleanRow["availableont1qty"]).toLocaleString('en-IN') : "0",
-                totalAmt: cleanRow["totalavailableamtincr"] ? cleanNum(cleanRow["totalavailableamtincr"]).toFixed(2) : "0.00",  
-                readyAmt: cleanRow["readilyavailableamtincr"] ? cleanNum(cleanRow["readilyavailableamtincr"]).toFixed(2) : "0.00",
-                t1Amt: cleanRow["availableont1basisamtincr"] ? cleanNum(cleanRow["availableont1basisamtincr"]).toFixed(2) : "0.00" 
+                rateNumeric: parsedXirrValue, 
+                commission: (commIdx !== -1 && row[commIdx]) ? row[commIdx].trim() : "0",
+                liquidityType: (liqIdx !== -1 && row[liqIdx]) ? row[liqIdx].trim() : "N/A",
+                platform: (platIdx !== -1 && row[platIdx]) ? row[platIdx].trim() : "N/A",
+                type: (catIdx !== -1 && row[catIdx]) ? row[catIdx].trim() : "N/A",
+                tenure: (tenureIdx !== -1 && row[tenureIdx]) ? row[tenureIdx].trim() : "N/A",
+                riskCategory: (riskIdx !== -1 && row[riskIdx]) ? row[riskIdx].trim() : "Medium Risk", 
+                clientCategory: (clientIdx !== -1 && row[clientIdx]) ? row[clientIdx].trim() : "N/A",
+                commissionBucket: (commBucketIdx !== -1 && row[commBucketIdx]) ? row[commBucketIdx].trim() : "Other",
+                about: (infoIdx !== -1 && row[infoIdx]) ? row[infoIdx].trim() : "",
+                availableQty: (avQtyIdx !== -1 && row[avQtyIdx]) ? row[avQtyIdx].trim() : "0",
+                readyQty: (rdQtyIdx !== -1 && row[rdQtyIdx]) ? row[rdQtyIdx].trim() : "0",
+                t1Qty: (t1QtyIdx !== -1 && row[t1QtyIdx]) ? row[t1QtyIdx].trim() : "0",
+                totalAmt: (totAmtIdx !== -1 && row[totAmtIdx]) ? row[totAmtIdx].trim() : "0",  
+                readyAmt: (rdAmtIdx !== -1 && row[rdAmtIdx]) ? row[rdAmtIdx].trim() : "0",
+                t1Amt: (t1AmtIdx !== -1 && row[t1AmtIdx]) ? row[t1AmtIdx].trim() : "0" 
             });
-        });
+        }
 
         inventoryData = validatedBuffer;
         buildCustomInteractiveFilters();
         executeTerminalGridEngine();
     } catch (error) {
-        console.error("Connection data matrix breakdown:", error);
-        document.getElementById('results-count-text').innerText = "Sync issue detected. Rendering buffer modules...";
+        console.error("Connection matrix mapping down:", error);
+        document.getElementById('results-count-text').innerText = "Sync failure. Verify sharing and publishing settings...";
     }
 }
 
@@ -345,7 +369,7 @@ function executeTerminalGridEngine() {
     if (!grid) return;
 
     let filtered = inventoryData.filter(bond => {
-        const textMatch = !masterState.search || bond.issuer.toLowerCase().includes(masterState.search) || bond.isin.toLowerCase().includes(masterState.search);
+        const textMatch = !masterState.search || bond.issuer.toLowerCase().includes(masterState.search) || bond.isin.toLowerCase().includes(masterState.search) || bond.about.toLowerCase().includes(masterState.search);
         
         let yieldMatch = true;
         if (masterState.yieldGroup === "under-8") yieldMatch = bond.rateNumeric < 8;
@@ -383,7 +407,11 @@ function executeTerminalGridEngine() {
         
         let badgeColor = "bg-emerald-100 text-emerald-800";
         if(bond.riskCategory.toLowerCase().includes("medium")) badgeColor = "bg-amber-100 text-amber-800";
-        if(bond.riskCategory.toLowerCase().includes("high")) badgeColor = "bg-orange-100 text-orange-800";
+        if(bond.riskCategory.toLowerCase().includes("high") || bond.riskCategory.toLowerCase().includes("very high")) badgeColor = "bg-orange-100 text-orange-800";
+        if(bond.riskCategory.toLowerCase().includes("distressed") || bond.riskCategory.toLowerCase().includes("default")) badgeColor = "bg-red-100 text-red-800";
+
+        // Generate a clean text display fallback if about field is blank
+        const aboutSnippet = bond.about ? bond.about : "No supplemental company overview commentary registered for this issuer.";
 
         elementCard.innerHTML = `
             <div>
@@ -394,7 +422,12 @@ function executeTerminalGridEngine() {
                         <span class="${badgeColor} px-1.5 py-0.5 rounded text-[9px] font-semibold">${bond.riskCategory}</span>
                     </div>
                 </div>
-                <div class="text-[10px] font-mono text-slate-400 mb-3">ISIN: ${bond.isin}</div>
+                <div class="text-[10px] font-mono text-slate-400 mb-2">ISIN: ${bond.isin}</div>
+                
+                <p class="text-slate-500 text-[0.7rem] leading-relaxed line-clamp-2 mb-3 bg-slate-50 p-2 rounded-xl border border-slate-100 italic font-medium">
+                    ${aboutSnippet}
+                </p>
+
                 <div class="grid grid-cols-2 gap-x-4 gap-y-1.5 border-t border-b border-slate-100 py-2 my-2 text-slate-600 font-medium">
                     <div class="flex justify-between"><span>Coupon:</span><strong class="text-slate-800">${bond.coupon}</strong></div>
                     <div class="flex justify-between"><span>Investor XIRR:</span><strong class="text-purple-600">${bond.xirr}</strong></div>
@@ -428,7 +461,7 @@ function executeTerminalGridEngine() {
 
 function displayDetailedAssetDrawer(bond) {
     document.getElementById('modal-issuer-name').innerText = bond.issuer;
-    document.getElementById('modal-issuer-about').innerText = bond.about || "No supplemental profile notes filed for this corporate issuer structure.";
+    document.getElementById('modal-issuer-about').innerText = bond.about || "No supplemental matrix commentary registered for this corporate issuer.";
     document.getElementById('modal-tenure-val').innerText = bond.tenure;
     document.getElementById('modal-maturity-val').innerText = bond.maturity;
 
